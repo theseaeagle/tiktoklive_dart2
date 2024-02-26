@@ -1,78 +1,74 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'tiktokCookieJar.dart';
-import 'webcastProtobuf.dart';
-import 'tiktokSignatureProvider.dart';
-import 'webcastConfig.dart';
+/// Custom cookie jar for Dart HTTP requests.
+/// This is adapted from a custom cookie jar implementation for Axios in JavaScript.
+/// It's designed to work around issues with cookie handling when using proxy agents.
+class TikTokCookieJar {
+  final Map<String, String> cookies = {};
 
-class TikTokHttpClient {
-  final Map<String, String> _customHeaders;
-  final http.Client _httpClient;
-  final TikTokCookieJar _cookieJar;
-  String? _sessionId;
+  TikTokCookieJar();
 
-  TikTokHttpClient(this._customHeaders, {String? sessionId})
-      : _httpClient = http.Client(),
-        _cookieJar = TikTokCookieJar() {
-    if (_customHeaders.containsKey('Cookie')) {
-      _customHeaders.remove('Cookie');
-    }
+  /// Reads and stores cookies from the 'set-cookie' headers in the HTTP response.
+  void readCookies(Map<String, String> headers) {
+    final setCookieHeaders = headers['set-cookie'];
 
-    if (sessionId != null) {
-      setSessionId(sessionId);
+    if (setCookieHeaders != null) {
+      final cookieList = setCookieHeaders.split(',');
+      for (final setCookieHeader in cookieList) {
+        processSetCookieHeader(setCookieHeader.trim());
+      }
     }
   }
 
-  Future<http.Response> _get(String url, {String? responseType}) async {
-    return _httpClient.get(Uri.parse(url), headers: _customHeaders);
-  }
-
-  Future<http.Response> _post(String url, Map<String, String> params, dynamic data, {String? responseType}) async {
-    return _httpClient.post(Uri.parse(url), body: data, headers: _customHeaders);
-  }
-
-  void setSessionId(String sessionId) {
-    _sessionId = sessionId;
-    _cookieJar.setCookie('sessionid', sessionId);
-    _cookieJar.setCookie('sessionid_ss', sessionId);
-    _cookieJar.setCookie('sid_tt', sessionId);
-  }
-
-  Future<String> _buildUrl(String host, String path, Map<String, dynamic>? params, bool sign) async {
-    var fullUrl = '$host$path?${Uri(queryParameters: params).query}';
-
-    if (sign) {
-      fullUrl = await signWebcastRequest(fullUrl, _customHeaders, _cookieJar);
+  /// Appends stored cookies to the request headers.
+  void appendCookies(Map<String, String> headers) {
+    // We use the capitalized 'Cookie' header, because every browser does that
+    final headerCookie = headers['Cookie'] ?? headers['cookie'];
+    if (headerCookie != null) {
+      final parsedCookies = parseCookie(headerCookie);
+      cookies.addAll(parsedCookies);
     }
 
-    return fullUrl;
+    headers['Cookie'] = getCookieString();
   }
 
-  Future<dynamic> getMainPage(String path) async {
-    var response = await _get('${Config.TIKTOK_URL_WEB}$path');
-    return json.decode(response.body);
+  /// Parses a cookie string into a Map of cookie names and values.
+  Map<String, String> parseCookie(String str) {
+    final Map<String, String> cookies = {};
+
+    final cookiePairs = str.split('; ');
+    for (final pair in cookiePairs) {
+      final parts = pair.split('=');
+      if (parts.length >= 2) {
+        final name = Uri.decodeComponent(parts[0]);
+        final value = parts.sublist(1).join('=');
+        cookies[name] = value;
+      }
+    }
+
+    return cookies;
   }
 
-  Future<dynamic> getDeserializedObjectFromWebcastApi(String path, Map<String, dynamic> params, String schemaName, bool shouldSign) async {
-    var url = await _buildUrl(Config.TIKTOK_URL_WEBCAST, path, params, shouldSign);
-    var response = await _get(url);
-    return deserializeMessage(schemaName, response.bodyBytes);
+  /// Processes a 'Set-Cookie' header and stores the cookie.
+  void processSetCookieHeader(String setCookieHeader) {
+    final parts = setCookieHeader.split(';')[0].split('=');
+    if (parts.length >= 2) {
+      final name = Uri.decodeComponent(parts[0]);
+      final value = parts.sublist(1).join('=');
+      cookies[name] = value;
+    }
   }
 
-  Future<dynamic> getJsonObjectFromWebcastApi(String path, Map<String, dynamic> params, bool shouldSign) async {
-    var url = await _buildUrl(Config.TIKTOK_URL_WEBCAST, path, params, shouldSign);
-    var response = await _get(url);
-    return json.decode(response.body);
+  /// Retrieves a cookie value by name.
+  String? getCookieByName(String name) {
+    return cookies[name];
   }
 
-  Future<dynamic> postFormDataToWebcastApi(String path, Map<String, dynamic> params, dynamic formData) async {
-    var response = await _post('${Config.TIKTOK_URL_WEBCAST}$path', params, formData);
-    return json.decode(response.body);
+  /// Constructs a cookie header string from stored cookies.
+  String getCookieString() {
+    return cookies.entries.map((e) => '${Uri.encodeComponent(e.key)}=${e.value}').join('; ');
   }
 
-  Future<dynamic> getJsonObjectFromTiktokApi(String path, Map<String, dynamic> params, bool shouldSign) async {
-    var url = await _buildUrl(Config.TIKTOK_URL_WEB, path, params, shouldSign);
-    var response = await _get(url);
-    return json.decode(response.body);
+  /// Sets a cookie.
+  void setCookie(String name, String value) {
+    cookies[name] = value;
   }
 }

@@ -1,73 +1,86 @@
 /// Custom cookie jar for Dart HTTP clients.
-/// This is a conceptual translation from the original JavaScript code designed for Axios.
-/// Dart's HTTP package or similar should be used to make HTTP requests.
-import 'dart:convert';
+/// This is a conceptual translation from JavaScript to Dart and does not directly integrate with a Dart HTTP client.
+/// It's meant to demonstrate how the cookie management logic can be implemented in Dart.
 
 class TikTokCookieJar {
-  final Map<String, String> cookies = {};
+  Map<String, String> cookies = {};
 
-  /// Reads and stores cookies from the response headers.
+  TikTokCookieJar();
+
+  /// Reads cookies from response headers and stores them.
   void readCookies(Map<String, String> headers) {
-    final List<String>? setCookieHeaders = headers['set-cookie']?.split(',');
+    final setCookieHeaders = headers['set-cookie'];
 
     if (setCookieHeaders != null) {
-      for (final setCookieHeader in setCookieHeaders) {
+      final cookieList = setCookieHeaders.split(',');
+      for (final setCookieHeader in cookieList) {
         processSetCookieHeader(setCookieHeader.trim());
       }
     }
   }
 
-  /// Appends stored cookies to the request headers.
+  /// Appends cookies to request headers.
   void appendCookies(Map<String, String> headers) {
-    final String? headerCookie = headers['Cookie'];
+    // We use the capitalized 'Cookie' header, because every browser does that
+    if (headers.containsKey('cookie')) {
+      headers['Cookie'] = headers['cookie']!;
+      headers.remove('cookie');
+    }
+
+    // Cookies already set by custom headers? => Append
+    final headerCookie = headers['Cookie'];
     if (headerCookie != null) {
-      final Map<String, String> parsedCookies = parseCookie(headerCookie);
+      final parsedCookies = parseCookie(headerCookie);
       cookies.addAll(parsedCookies);
     }
 
     headers['Cookie'] = getCookieString();
   }
 
-  /// Parses a cookie string into a Map.
+  /// Parses cookies string to object.
   Map<String, String> parseCookie(String str) {
-    final Map<String, String> cookies = {};
+    final cookies = <String, String>{};
 
-    final List<String> parts = str.split('; ');
-    for (final part in parts) {
-      final int index = part.indexOf('=');
-      if (index == -1) continue;
+    if (str.isEmpty) {
+      return cookies;
+    }
 
-      final String name = Uri.decodeComponent(part.substring(0, index));
-      final String value = part.substring(index + 1);
+    final cookiePairs = str.split('; ');
+    for (final pair in cookiePairs) {
+      if (pair.isEmpty) {
+        continue;
+      }
 
-      cookies[name] = value;
+      final parts = pair.split('=');
+      final cookieName = Uri.decodeComponent(parts.first);
+      final cookieValue = parts.sublist(1).join('=');
+
+      cookies[cookieName] = cookieValue;
     }
 
     return cookies;
   }
 
-  /// Processes a 'Set-Cookie' header and stores the cookie.
+  /// Processes a single Set-Cookie header.
   void processSetCookieHeader(String setCookieHeader) {
-    final int index = setCookieHeader.indexOf(';');
-    final String nameValuePart = (index == -1) ? setCookieHeader : setCookieHeader.substring(0, index);
-    final int equalIndex = nameValuePart.indexOf('=');
+    final nameValuePart = setCookieHeader.split(';').first;
+    final parts = nameValuePart.split('=');
+    final cookieName = Uri.decodeComponent(parts.first);
+    final cookieValue = parts.sublist(1).join('=');
 
-    if (equalIndex != -1) {
-      final String cookieName = Uri.decodeComponent(nameValuePart.substring(0, equalIndex));
-      final String cookieValue = nameValuePart.substring(equalIndex + 1);
-
+    if (cookieName.isNotEmpty && cookieValue.isNotEmpty) {
       cookies[cookieName] = cookieValue;
     }
   }
 
-  /// Retrieves a cookie value by name.
+  /// Retrieves a cookie by name.
   String? getCookieByName(String cookieName) {
     return cookies[cookieName];
   }
 
-  /// Returns a string representation of the stored cookies.
+  /// Constructs a cookie header string from stored cookies.
   String getCookieString() {
-    return cookies.entries.map((entry) => '${Uri.encodeComponent(entry.key)}=${entry.value}').join('; ');
+    return cookies.entries.map((e) => '${Uri.encodeComponent(e.key)}=${e.value}').join('; ');
   }
 
   /// Sets a cookie.
